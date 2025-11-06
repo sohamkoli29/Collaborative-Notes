@@ -7,6 +7,8 @@ import Login from './pages/Login.jsx';
 import Register from './pages/Register.jsx';
 import Dashboard from './pages/Dashboard.jsx';
 import NoteEditor from './pages/NoteEditor.jsx'; // Add this import
+import SharedNotes from './pages/SharedNotes.jsx';
+
 
 function App() {
   return (
@@ -38,6 +40,7 @@ function App() {
             
             {/* Redirect to dashboard by default */}
             <Route path="*" element={<Navigate to="/" replace />} />
+            <Route path="/shared/:token" element={<SharedNotes />} />
           </Routes>
         </div>
       </AuthProvider>

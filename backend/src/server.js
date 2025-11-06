@@ -9,6 +9,8 @@ import notesRoutes from './routes/notes.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { authConfig } from './config/auth.js';
 import SocketServer from './sockets/socketServer.js';
+import shareRoutes from './routes/share.js';
+
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -48,6 +50,7 @@ app.use((req, res, next) => {
 // Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/notes', notesRoutes);
+app.use('/api/shares', shareRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {

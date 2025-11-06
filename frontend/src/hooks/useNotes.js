@@ -20,7 +20,7 @@ export const useNotes = () => {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, []); // Empty dependency array - function never changes
 
   // Load single note - useCallback to prevent unnecessary re-renders
   const loadNote = useCallback(async (noteId) => {
@@ -39,7 +39,7 @@ export const useNotes = () => {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, []); // Empty dependency array - function never changes
 
   // Create new note
   const createNote = async (noteData) => {
@@ -145,10 +145,10 @@ export const useNotes = () => {
     setError(null);
   };
 
-  // Load notes on component mount only
+  // Load notes on component mount only - use loadNotes in dependency array
   useEffect(() => {
     loadNotes();
-  }, [loadNotes]);
+  }, [loadNotes]); // loadNotes is now stable due to useCallback
 
   return {
     notes,

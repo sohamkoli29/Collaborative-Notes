@@ -3,11 +3,14 @@ import { useAuth } from '../contexts/AuthContext.jsx';
 import { useNotes } from '../hooks/useNotes.js';
 import NoteList from '../components/notes/NoteList.jsx';
 import CreateNoteModal from '../components/notes/CreateNoteModal.jsx';
+import ShareModal from '../components/notes/ShareModal.jsx';
 import Button from '../components/ui/Button.jsx';
 import Card from '../components/ui/Card.jsx';
 import Loading from '../components/ui/Loading.jsx';
 
+// Make sure this is a proper function component
 const Dashboard = () => {
+  // Hooks must be called at the top level of the function component
   const { user } = useAuth();
   const { 
     notes, 
@@ -19,7 +22,10 @@ const Dashboard = () => {
     clearError 
   } = useNotes();
 
+  // State hooks must be called in the same order every render
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [shareModalOpen, setShareModalOpen] = useState(false);
+  const [selectedNote, setSelectedNote] = useState(null);
 
   const handleCreateNote = async (noteData) => {
     await createNote(noteData);
@@ -28,7 +34,6 @@ const Dashboard = () => {
   const handleEditNote = (note) => {
     // Will be implemented in NoteEditor page
     console.log('Edit note:', note);
-    // navigate(`/notes/${note._id}`);
   };
 
   const handleDeleteNote = async (note) => {
@@ -42,8 +47,8 @@ const Dashboard = () => {
   };
 
   const handleShareNote = (note) => {
-    // Will be implemented in Week 4
-    console.log('Share note:', note);
+    setSelectedNote(note);
+    setShareModalOpen(true);
   };
 
   if (loading && notes.length === 0) {
@@ -112,13 +117,14 @@ const Dashboard = () => {
       )}
 
       {/* Notes List */}
-    <NoteList
-  notes={notes}
-  loading={loading}
-  onDeleteNote={handleDeleteNote}
-  onShareNote={handleShareNote}
-  currentUser={user}
-/>
+      <NoteList
+        notes={notes}
+        loading={loading}
+        onEditNote={handleEditNote}
+        onDeleteNote={handleDeleteNote}
+        onShareNote={handleShareNote}
+        currentUser={user}
+      />
 
       {/* Create Note Modal */}
       <CreateNoteModal
@@ -127,8 +133,16 @@ const Dashboard = () => {
         onCreate={handleCreateNote}
         loading={loading}
       />
+
+      {/* Share Modal */}
+      <ShareModal
+        isOpen={shareModalOpen}
+        onClose={() => setShareModalOpen(false)}
+        note={selectedNote}
+      />
     </div>
   );
 };
 
+// Make sure to export as default
 export default Dashboard;
