@@ -1,8 +1,11 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useNotes } from '../hooks/useNotes.js';
 import { useAuth } from '../contexts/AuthContext.jsx';
+import { useSocket } from '../hooks/useSocket.js';
 import RichTextEditor from '../components/notes/RichTextEditor.jsx';
+import CollaboratorPresence from '../components/notes/CollaboratorPresence.jsx';
+import ConnectionStatus from '../components/ConnectionStatus.jsx';
 import Button from '../components/ui/Button.jsx';
 import Input from '../components/ui/Input.jsx';
 import Loading from '../components/ui/Loading.jsx';
@@ -21,6 +24,24 @@ const NoteEditor = () => {
     clearError 
   } = useNotes();
 
+  // Fix: Properly destructure all values from useSocket
+  const socket = useSocket();
+  const {
+    isConnected,
+    socketId,
+    connectionError, // Make sure this is included
+    joinNote,
+    leaveNote,
+    sendTextChange,
+    sendCursorUpdate,
+    sendTitleChange,
+    saveNote,
+    startTyping,
+    stopTyping,
+    setupNoteListeners,
+    removeNoteListeners
+  } = socket;
+
   const [formData, setFormData] = useState({
     title: '',
     content: ''
@@ -28,23 +49,138 @@ const NoteEditor = () => {
   const [isSaving, setIsSaving] = useState(false);
   const [hasChanges, setHasChanges] = useState(false);
   const [initialLoad, setInitialLoad] = useState(true);
+  const [collaborators, setCollaborators] = useState([]);
+  const [noteVersion, setNoteVersion] = useState(0);
+  const [isTyping, setIsTyping] = useState(false);
 
-  // Memoized load function to prevent infinite re-renders
-  const loadNoteData = useCallback(async () => {
-    if (noteId && initialLoad) {
-      try {
-        await loadNote(noteId);
-        setInitialLoad(false);
-      } catch (error) {
-        console.error('Failed to load note:', error);
+  const clientIdRef = useRef(Date.now().toString());
+  const lastSavedVersionRef = useRef(0);
+
+  // Socket event handlers
+  const setupSocketHandlers = useCallback(() => {
+    const handlers = {
+      'note-joined': (data) => {
+        console.log('Joined note room:', data.noteId);
+        setNoteVersion(data.version);
+        lastSavedVersionRef.current = data.version;
+      },
+
+      'text-change': (data) => {
+        // Ignore our own changes (handled by echo)
+        if (data.clientId === clientIdRef.current) return;
+
+        // Apply remote changes
+        if (data.noteId === noteId) {
+          setFormData(prev => ({
+            ...prev,
+            content: data.changes.content // Simplified - would use patches in real implementation
+          }));
+          setNoteVersion(data.version);
+        }
+      },
+
+      'title-change': (data) => {
+        if (data.noteId === noteId && data.userId !== user?._id) {
+          setFormData(prev => ({
+            ...prev,
+            title: data.title
+          }));
+          setNoteVersion(data.version);
+        }
+      },
+
+      'note-collaborators': (data) => {
+        setCollaborators(data);
+      },
+
+      'user-joined-note': (data) => {
+        console.log('User joined:', data.username);
+        // Collaborators list will be updated via 'note-collaborators' event
+      },
+
+      'user-left-note': (data) => {
+        console.log('User left:', data.username);
+        // Collaborators list will be updated via 'note-collaborators' event
+      },
+
+      'user-typing': (data) => {
+        if (data.userId !== user?._id) {
+          setIsTyping(data.isTyping);
+        }
+      },
+
+      'change-applied': (data) => {
+        if (data.noteId === noteId) {
+          setNoteVersion(data.version);
+          lastSavedVersionRef.current = data.version;
+        }
+      },
+
+      'version-conflict': (data) => {
+        console.warn('Version conflict detected');
+        // Sync with server version
+        setFormData(prev => ({
+          ...prev,
+          content: data.currentContent
+        }));
+        setNoteVersion(data.currentVersion);
+        lastSavedVersionRef.current = data.currentVersion;
+      },
+
+      'sync-required': (data) => {
+        // Full sync required
+        setFormData(prev => ({
+          ...prev,
+          content: data.content
+        }));
+      },
+
+      'note-saved': (data) => {
+        if (data.noteId === noteId) {
+          setNoteVersion(data.version);
+          lastSavedVersionRef.current = data.version;
+          setHasChanges(false);
+        }
+      },
+
+      'pong': (data) => {
+        console.log('Server pong received:', data);
       }
+    };
+
+    setupNoteListeners(handlers);
+    return handlers;
+  }, [noteId, user?._id, setupNoteListeners]);
+
+  // Join note room when connected and note is loaded
+  useEffect(() => {
+    if (isConnected && currentNote && noteId) {
+      joinNote(noteId);
+      const handlers = setupSocketHandlers();
+
+      return () => {
+        removeNoteListeners();
+        Object.keys(handlers).forEach(event => {
+          // Cleanup individual handlers if needed
+        });
+        leaveNote(noteId);
+      };
+    }
+  }, [isConnected, currentNote, noteId, joinNote, leaveNote, setupSocketHandlers, removeNoteListeners]);
+
+  // Load note when component mounts
+  useEffect(() => {
+    if (noteId && initialLoad) {
+      loadNote(noteId)
+        .then(note => {
+          setNoteVersion(note.version);
+          lastSavedVersionRef.current = note.version;
+        })
+        .finally(() => {
+          setInitialLoad(false);
+        });
     }
   }, [noteId, loadNote, initialLoad]);
-
-  // Load note when component mounts or noteId changes
-  useEffect(() => {
-    loadNoteData();
-  }, [loadNoteData]);
 
   // Update form data when currentNote changes
   useEffect(() => {
@@ -54,18 +190,52 @@ const NoteEditor = () => {
         content: currentNote.content || ''
       });
       setHasChanges(false);
-      setInitialLoad(false);
     }
   }, [currentNote, loading]);
 
   const handleTitleChange = (e) => {
-    setFormData({ ...formData, title: e.target.value });
+    const newTitle = e.target.value;
+    setFormData(prev => ({ ...prev, title: newTitle }));
     setHasChanges(true);
+
+    // Send real-time title change
+    if (isConnected && noteId) {
+      sendTitleChange(noteId, newTitle);
+    }
   };
 
   const handleContentChange = (content) => {
-    setFormData({ ...formData, content });
+    setFormData(prev => ({ ...prev, content }));
     setHasChanges(true);
+
+    // Send real-time text change (simplified - would use patches)
+    if (isConnected && noteId) {
+      sendTextChange(noteId, {
+        type: 'full',
+        content: content
+      }, noteVersion, clientIdRef.current);
+    }
+  };
+
+  const handleCursorChange = (range) => {
+    if (isConnected && noteId && range) {
+      sendCursorUpdate(noteId, {
+        index: range.index,
+        length: range.length
+      }, null);
+    }
+  };
+
+  const handleTypingStart = () => {
+    if (isConnected && noteId) {
+      startTyping(noteId);
+    }
+  };
+
+  const handleTypingStop = () => {
+    if (isConnected && noteId) {
+      stopTyping(noteId);
+    }
   };
 
   const handleSave = async () => {
@@ -73,8 +243,14 @@ const NoteEditor = () => {
 
     setIsSaving(true);
     try {
-      await updateNote(noteId, formData);
-      setHasChanges(false);
+      if (isConnected) {
+        // Use real-time save
+        saveNote(noteId, formData.content, formData.title);
+      } else {
+        // Fallback to REST API
+        await updateNote(noteId, formData);
+        setHasChanges(false);
+      }
     } catch (error) {
       // Error is handled in the hook
     } finally {
@@ -92,7 +268,6 @@ const NoteEditor = () => {
     navigate('/');
   };
 
-  // Show loading only during initial load
   if (initialLoad && loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -158,11 +333,17 @@ const NoteEditor = () => {
 
             {/* Actions */}
             <div className="flex items-center space-x-3">
+              {/* Connection Status */}
+              <ConnectionStatus 
+                isConnected={isConnected} 
+                connectionError={connectionError} 
+              />
+
               {/* Collaborators count */}
-              {currentNote?.collaborators && currentNote.collaborators.length > 0 && (
+              {collaborators.length > 0 && (
                 <div className="flex items-center space-x-1 text-sm text-gray-600">
                   <Users className="w-4 h-4" />
-                  <span>{currentNote.collaborators.length}</span>
+                  <span>{collaborators.length}</span>
                 </div>
               )}
 
@@ -198,28 +379,52 @@ const NoteEditor = () => {
           </div>
         )}
 
+        {/* Collaborator Presence */}
+        <CollaboratorPresence
+          collaborators={collaborators}
+          currentUser={user}
+        />
+
+        {/* Typing Indicator */}
+        {isTyping && (
+          <div className="mb-4 text-sm text-gray-500 italic">
+            Someone is typing...
+          </div>
+        )}
+
         {/* Editor */}
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
           <RichTextEditor
             value={formData.content}
             onChange={handleContentChange}
+            onCursorChange={handleCursorChange}
+            onTypingStart={handleTypingStart}
+            onTypingStop={handleTypingStop}
             placeholder="Start writing your note content..."
-            height="calc(100vh - 200px)"
+            height="calc(100vh - 280px)"
+            noteId={noteId}
+            realTimeEnabled={isConnected}
           />
         </div>
 
         {/* Note Info */}
         {currentNote && (
-          <div className="mt-4 text-sm text-gray-500">
-            <p>
-              Last edited by {currentNote.lastEditedBy?.username || 'Unknown'} • 
-              {' '}{new Date(currentNote.updatedAt).toLocaleString()}
-            </p>
-            {!isOwner && (
-              <p className="text-blue-600 mt-1">
-                You are collaborating on this note
+          <div className="mt-4 text-sm text-gray-500 flex justify-between items-center">
+            <div>
+              <p>
+                Last edited by {currentNote.lastEditedBy?.username || 'Unknown'} • 
+                {' '}{new Date(currentNote.updatedAt).toLocaleString()}
               </p>
-            )}
+              {!isOwner && (
+                <p className="text-blue-600 mt-1">
+                  You are collaborating on this note
+                </p>
+              )}
+            </div>
+            <div className="text-xs">
+              Version: {noteVersion} • 
+              {isConnected ? ' Real-time' : ' Offline'}
+            </div>
           </div>
         )}
       </main>

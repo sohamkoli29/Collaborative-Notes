@@ -3,7 +3,7 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
-const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/collaborative-notes';
+const MONGODB_URI = process.env.MONGODB_URI ;
 
 export const connectDB = async () => {
   try {
