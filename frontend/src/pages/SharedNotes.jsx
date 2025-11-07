@@ -9,18 +9,18 @@ import { FileText, User, Calendar, Download, CheckCircle, XCircle } from 'lucide
 const SharedNotes = () => {
   const { token } = useParams();
   const navigate = useNavigate();
-  const { user, isAuthenticated } = useAuth();
-  const { getShareByToken, acceptShare, loading, error } = useSharing();
+  const { user, isAuthenticated, loading: authLoading, isInitialized } = useAuth();
+  const { getShareByToken, acceptShare, loading: shareLoading, error } = useSharing();
 
   const [share, setShare] = useState(null);
   const [isAccepting, setIsAccepting] = useState(false);
   const [accepted, setAccepted] = useState(false);
 
   useEffect(() => {
-    if (token) {
+    if (token && isInitialized) {
       loadShare();
     }
-  }, [token]);
+  }, [token, isInitialized]);
 
   const loadShare = async () => {
     try {
@@ -32,6 +32,8 @@ const SharedNotes = () => {
   };
 
   const handleAcceptShare = async () => {
+    console.log('Accept share clicked - isAuthenticated:', isAuthenticated, 'user:', user);
+    
     if (!isAuthenticated) {
       // Redirect to login with return URL
       navigate('/login', { state: { from: `/shared/${token}` } });
@@ -40,7 +42,8 @@ const SharedNotes = () => {
 
     setIsAccepting(true);
     try {
-      await acceptShare(token);
+      const result = await acceptShare(token);
+      console.log('Share accepted successfully:', result);
       setAccepted(true);
       setTimeout(() => {
         navigate('/'); // Redirect to dashboard after acceptance
@@ -52,10 +55,11 @@ const SharedNotes = () => {
     }
   };
 
-  if (loading) {
+  // Show loading while checking auth or loading share
+  if (authLoading || !isInitialized || shareLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <Loading size="lg" text="Loading shared note..." />
+        <Loading size="lg" text="Loading..." />
       </div>
     );
   }

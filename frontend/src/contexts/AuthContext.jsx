@@ -15,12 +15,12 @@ export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [token, setToken] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [isInitialized, setIsInitialized] = useState(false);
 
   // Helper function to safely get token from localStorage
   const getStoredToken = () => {
     try {
       const storedToken = localStorage.getItem('token');
-      // Validate token format - JWT tokens are typically long strings
       if (storedToken && 
           storedToken !== 'null' && 
           storedToken !== 'undefined' && 
@@ -56,6 +56,7 @@ export const AuthProvider = ({ children }) => {
       console.log('No valid token found in storage');
     }
     setLoading(false);
+    setIsInitialized(true);
   };
 
   useEffect(() => {
@@ -65,21 +66,17 @@ export const AuthProvider = ({ children }) => {
   const extractUserAndToken = (responseData) => {
     console.log('Extracting user and token from response:', responseData);
     
-    // Handle different possible response structures
     let user = null;
     let token = null;
 
-    // Structure 1: response.data.data.user and response.data.data.token
     if (responseData.data && responseData.data.user && responseData.data.token) {
       user = responseData.data.user;
       token = responseData.data.token;
     }
-    // Structure 2: response.data.user and response.data.token  
     else if (responseData.user && responseData.token) {
       user = responseData.user;
       token = responseData.token;
     }
-    // Structure 3: Direct properties
     else if (responseData.data) {
       user = responseData.data.user || responseData.user;
       token = responseData.data.token || responseData.token;
@@ -95,13 +92,11 @@ export const AuthProvider = ({ children }) => {
       const response = await authAPI.login(email, password);
       const { user, token } = extractUserAndToken(response.data);
       
-      // Validate we got proper data
       if (!user || !token) {
         console.error('Missing user or token in response:', response.data);
         throw new Error('Authentication response incomplete');
       }
       
-      // Validate token format
       if (token.length < 50) {
         console.error('Invalid token format received:', token);
         throw new Error('Invalid authentication token received from server');
@@ -128,13 +123,11 @@ export const AuthProvider = ({ children }) => {
       const response = await authAPI.register(username, email, password);
       const { user, token } = extractUserAndToken(response.data);
       
-      // Validate we got proper data
       if (!user || !token) {
         console.error('Missing user or token in response:', response.data);
         throw new Error('Registration response incomplete');
       }
       
-      // Validate token format
       if (token.length < 50) {
         console.error('Invalid token format received:', token);
         throw new Error('Invalid authentication token received from server');
@@ -166,10 +159,12 @@ export const AuthProvider = ({ children }) => {
     user,
     token,
     loading,
+    isInitialized,
     login,
     register,
     logout,
-    isAuthenticated: !!user && !!token
+    isAuthenticated: !!user && !!token,
+    checkAuth // Add this to manually trigger auth check
   };
 
   return (

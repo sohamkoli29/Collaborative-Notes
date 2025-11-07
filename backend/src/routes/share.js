@@ -7,6 +7,7 @@ import { noteAccess } from '../middleware/noteAccess.js';
 const router = express.Router();
 
 // Create a new share - REQUIRES AUTH
+// In backend/src/routes/share.js - update the access check
 router.post('/', authMiddleware, async (req, res) => {
   try {
     const { noteId, permission = 'read', expiresAt, maxAccesses, isPublic = false } = req.body;
@@ -16,18 +17,35 @@ router.post('/', authMiddleware, async (req, res) => {
       return res.status(400).json({ success: false, message: 'Note ID is required' });
     }
 
+    // First, check if user has ANY access to the note
     const note = await Note.findOne({
       _id: noteId,
       $or: [
         { owner: userId },
-        { 'collaborators.user': userId, 'collaborators.permission': 'write' }
+        { 'collaborators.user': userId }
       ]
     });
 
     if (!note) {
-      return res.status(403).json({ success: false, message: 'No write access to this note' });
+      return res.status(403).json({ success: false, message: 'No access to this note' });
     }
 
+    // Check if user has write access for write permission shares
+    if (permission === 'write') {
+      const hasWriteAccess = note.owner.toString() === userId || 
+        note.collaborators.some(collab => 
+          collab.user.toString() === userId && collab.permission === 'write'
+        );
+      
+      if (!hasWriteAccess) {
+        return res.status(403).json({ 
+          success: false, 
+          message: 'Write permission required to create write shares' 
+        });
+      }
+    }
+
+    // For read permission, allow if user has any access to the note
     const share = new Share({
       note: noteId,
       sharedBy: userId,
@@ -123,7 +141,7 @@ router.post('/accept/:token', authMiddleware, async (req, res) => {
     }
 
     const share = await Share.findOne({ shareToken: token })
-      .populate('note');
+      .populate('note', 'title content owner collaborators');
 
     if (!share) {
       return res.status(404).json({ success: false, message: 'Share not found' });
@@ -141,38 +159,52 @@ router.post('/accept/:token', authMiddleware, async (req, res) => {
     }
 
     console.log('Found note:', note._id, 'Current collaborators:', note.collaborators);
+    console.log('Share permission:', share.permission);
+    console.log('Share sharedBy:', share.sharedBy);
 
-    // Check if user already has access
+    // Check if user already has access (is owner or collaborator)
+    const isOwner = note.owner.toString() === userId;
     const existingCollaborator = note.collaborators.find(
       collab => collab.user && collab.user.toString() === userId
     );
 
-    if (!existingCollaborator) {
+    console.log('User is owner:', isOwner, 'Existing collaborator:', existingCollaborator);
+
+    if (!isOwner && !existingCollaborator) {
       console.log('Adding user as collaborator with permission:', share.permission);
+      
       // Add user as collaborator
       note.collaborators.push({
         user: userId,
         permission: share.permission,
-        addedBy: share.sharedBy
+        addedBy: share.sharedBy,
+        addedAt: new Date()
       });
+      
       await note.save();
       console.log('User added as collaborator successfully');
+      
+      // Refresh the note to get updated data
+      const updatedNote = await Note.findById(note._id);
+      console.log('Updated note collaborators:', updatedNote.collaborators);
     } else {
       console.log('User already has access to this note');
     }
 
     // Increment accepted count
-    share.acceptedCount += 1;
+    share.acceptedCount = (share.acceptedCount || 0) + 1;
     await share.save();
+
+    // Get the updated note with populated data
+    const finalNote = await Note.findById(note._id)
+      .populate('owner', 'username email')
+      .populate('collaborators.user', 'username email');
 
     res.json({
       success: true,
       message: 'Successfully joined the note',
       data: {
-        note: {
-          _id: note._id,
-          title: note.title
-        },
+        note: finalNote,
         share
       }
     });
