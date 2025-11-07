@@ -6,9 +6,8 @@ import Layout from './components/Layout.jsx';
 import Login from './pages/Login.jsx';
 import Register from './pages/Register.jsx';
 import Dashboard from './pages/Dashboard.jsx';
-import NoteEditor from './pages/NoteEditor.jsx'; // Add this import
+import NoteEditor from './pages/NoteEditor.jsx';
 import SharedNotes from './pages/SharedNotes.jsx';
-
 
 function App() {
   return (
@@ -19,6 +18,9 @@ function App() {
             {/* Public routes */}
             <Route path="/login" element={<Login />} />
             <Route path="/register" element={<Register />} />
+            
+            {/* Shared notes route (public) - MUST come before protected routes */}
+            <Route path="/shared/:token" element={<SharedNotes />} />
             
             {/* Protected routes */}
             <Route path="/" element={
@@ -38,9 +40,8 @@ function App() {
               </ProtectedRoute>
             } />
             
-            {/* Redirect to dashboard by default */}
+            {/* Redirect to dashboard by default - MUST be last */}
             <Route path="*" element={<Navigate to="/" replace />} />
-            <Route path="/shared/:token" element={<SharedNotes />} />
           </Routes>
         </div>
       </AuthProvider>
