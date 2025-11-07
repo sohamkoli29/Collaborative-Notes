@@ -6,7 +6,7 @@ import { noteAccess } from '../middleware/noteAccess.js';
 
 const router = express.Router();
 
-// All routes require authentication
+// All routes require authentication except getShareByToken
 router.use(authMiddleware);
 
 // Create a new share
@@ -73,6 +73,103 @@ router.get('/note/:noteId', noteAccess('read'), async (req, res) => {
   } catch (error) {
     console.error('Get shares error:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch shares' });
+  }
+});
+
+// Get share by token (PUBLIC ROUTE - no auth required)
+router.get('/token/:token', async (req, res) => {
+  try {
+    const { token } = req.params;
+
+    if (!token) {
+      return res.status(400).json({ success: false, message: 'Share token is required' });
+    }
+
+    const share = await Share.findOne({ shareToken: token })
+      .populate('sharedBy', 'username email')
+      .populate('note', 'title content');
+
+    if (!share) {
+      return res.status(404).json({ success: false, message: 'Share not found' });
+    }
+
+    // Check if share is expired
+    if (share.isExpired()) {
+      return res.status(410).json({ success: false, message: 'This share link has expired' });
+    }
+
+    // Increment access count
+    share.accessCount += 1;
+    share.lastAccessed = new Date();
+    await share.save();
+
+    res.json({
+      success: true,
+      data: share
+    });
+  } catch (error) {
+    console.error('Get share by token error:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch share' });
+  }
+});
+
+// Accept share (requires authentication)
+router.post('/accept/:token', async (req, res) => {
+  try {
+    const { token } = req.params;
+    const userId = req.userId;
+
+    if (!token) {
+      return res.status(400).json({ success: false, message: 'Share token is required' });
+    }
+
+    const share = await Share.findOne({ shareToken: token })
+      .populate('note');
+
+    if (!share) {
+      return res.status(404).json({ success: false, message: 'Share not found' });
+    }
+
+    // Check if share is expired
+    if (share.isExpired()) {
+      return res.status(410).json({ success: false, message: 'This share link has expired' });
+    }
+
+    const note = await Note.findById(share.note._id);
+
+    // Check if user already has access
+    const existingCollaborator = note.collaborators.find(
+      collab => collab.user.toString() === userId
+    );
+
+    if (!existingCollaborator) {
+      // Add user as collaborator
+      note.collaborators.push({
+        user: userId,
+        permission: share.permission,
+        addedBy: share.sharedBy
+      });
+      await note.save();
+    }
+
+    // Increment accepted count
+    share.acceptedCount += 1;
+    await share.save();
+
+    res.json({
+      success: true,
+      message: 'Successfully joined the note',
+      data: {
+        note: {
+          _id: note._id,
+          title: note.title
+        },
+        share
+      }
+    });
+  } catch (error) {
+    console.error('Accept share error:', error);
+    res.status(500).json({ success: false, message: 'Failed to accept share' });
   }
 });
 

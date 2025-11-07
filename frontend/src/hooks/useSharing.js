@@ -6,6 +6,22 @@ export const useSharing = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
+  // Get share by token (public access)
+  const getShareByToken = useCallback(async (token) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const response = await shareAPI.getShareByToken(token);
+      return response;
+    } catch (err) {
+      const errorMessage = err.response?.data?.message || 'Failed to fetch share';
+      setError(errorMessage);
+      throw new Error(errorMessage);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
   // Create a share link
   const createShare = useCallback(async (noteId, shareData) => {
     setLoading(true);
@@ -128,6 +144,7 @@ export const useSharing = () => {
     shares,
     loading,
     error,
+    getShareByToken, // Add this to the returned object
     createShare,
     getNoteShares,
     updateShare,
