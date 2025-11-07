@@ -6,11 +6,8 @@ import { noteAccess } from '../middleware/noteAccess.js';
 
 const router = express.Router();
 
-// All routes require authentication except getShareByToken
-router.use(authMiddleware);
-
-// Create a new share
-router.post('/', async (req, res) => {
+// Create a new share - REQUIRES AUTH
+router.post('/', authMiddleware, async (req, res) => {
   try {
     const { noteId, permission = 'read', expiresAt, maxAccesses, isPublic = false } = req.body;
     const userId = req.userId;
@@ -58,8 +55,8 @@ router.post('/', async (req, res) => {
   }
 });
 
-// Get shares by noteId
-router.get('/note/:noteId', noteAccess('read'), async (req, res) => {
+// Get shares by noteId - REQUIRES AUTH
+router.get('/note/:noteId', authMiddleware, noteAccess('read'), async (req, res) => {
   try {
     const noteId = req.params.noteId;
     if (!noteId) {
@@ -76,7 +73,7 @@ router.get('/note/:noteId', noteAccess('read'), async (req, res) => {
   }
 });
 
-// Get share by token (PUBLIC ROUTE - no auth required)
+// Get share by token (PUBLIC ROUTE - NO AUTH REQUIRED)
 router.get('/token/:token', async (req, res) => {
   try {
     const { token } = req.params;
@@ -113,11 +110,13 @@ router.get('/token/:token', async (req, res) => {
   }
 });
 
-// Accept share (requires authentication)
-router.post('/accept/:token', async (req, res) => {
+// Accept share (REQUIRES AUTH)
+router.post('/accept/:token', authMiddleware, async (req, res) => {
   try {
     const { token } = req.params;
     const userId = req.userId;
+
+    console.log('Accepting share with token:', token, 'for user:', userId);
 
     if (!token) {
       return res.status(400).json({ success: false, message: 'Share token is required' });
@@ -136,13 +135,20 @@ router.post('/accept/:token', async (req, res) => {
     }
 
     const note = await Note.findById(share.note._id);
+    
+    if (!note) {
+      return res.status(404).json({ success: false, message: 'Note not found' });
+    }
+
+    console.log('Found note:', note._id, 'Current collaborators:', note.collaborators);
 
     // Check if user already has access
     const existingCollaborator = note.collaborators.find(
-      collab => collab.user.toString() === userId
+      collab => collab.user && collab.user.toString() === userId
     );
 
     if (!existingCollaborator) {
+      console.log('Adding user as collaborator with permission:', share.permission);
       // Add user as collaborator
       note.collaborators.push({
         user: userId,
@@ -150,6 +156,9 @@ router.post('/accept/:token', async (req, res) => {
         addedBy: share.sharedBy
       });
       await note.save();
+      console.log('User added as collaborator successfully');
+    } else {
+      console.log('User already has access to this note');
     }
 
     // Increment accepted count

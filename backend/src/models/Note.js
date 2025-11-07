@@ -16,17 +16,28 @@ const noteSchema = new mongoose.Schema({
     ref: 'User',
     required: true
   },
-  collaborators: [{
-    user: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'User'
-    },
-    permission: {
-      type: String,
-      enum: ['read', 'write'],
-      default: 'read'
-    }
-  }],
+ // In backend/src/models/Note.js - update collaborators schema
+collaborators: [{
+  user: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: true
+  },
+  permission: {
+    type: String,
+    enum: ['read', 'write'],
+    default: 'read'
+  },
+  addedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: true
+  },
+  addedAt: {
+    type: Date,
+    default: Date.now
+  }
+}],
   isPublic: {
     type: Boolean,
     default: false
