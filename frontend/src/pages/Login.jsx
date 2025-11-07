@@ -23,9 +23,24 @@ const Login = () => {
   useEffect(() => {
     if (isAuthenticated) {
       console.log('User is authenticated, navigating to:', from);
-      navigate(from, { replace: true });
+      
+      // Check if we're coming from a shared note
+      if (from.includes('/shared/')) {
+        // Extract token from the URL or location state
+        const token = location.state?.from?.search?.split('=')[1] || 
+                     from.split('/').pop();
+        
+        if (token) {
+          // Navigate back to the shared note page with the token
+          navigate(`/shared/${token}`, { replace: true });
+        } else {
+          navigate(from, { replace: true });
+        }
+      } else {
+        navigate(from, { replace: true });
+      }
     }
-  }, [isAuthenticated, navigate, from]);
+  }, [isAuthenticated, navigate, from, location]);
 
   const handleChange = (e) => {
     setFormData({

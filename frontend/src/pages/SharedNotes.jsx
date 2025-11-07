@@ -31,29 +31,43 @@ const SharedNotes = () => {
     }
   };
 
-  const handleAcceptShare = async () => {
-    console.log('Accept share clicked - isAuthenticated:', isAuthenticated, 'user:', user);
-    
-    if (!isAuthenticated) {
-      // Redirect to login with return URL
-      navigate('/login', { state: { from: `/shared/${token}` } });
-      return;
-    }
+  useEffect(() => {
+  if (isAuthenticated && share && !accepted && !isAccepting) {
+    // Auto-accept the share when user returns after login
+    handleAcceptShare();
+  }
+}, [isAuthenticated, share, accepted, isAccepting]);
 
-    setIsAccepting(true);
-    try {
-      const result = await acceptShare(token);
-      console.log('Share accepted successfully:', result);
-      setAccepted(true);
-      setTimeout(() => {
-        navigate('/'); // Redirect to dashboard after acceptance
-      }, 2000);
-    } catch (error) {
-      console.error('Failed to accept share:', error);
-    } finally {
-      setIsAccepting(false);
-    }
-  };
+const handleAcceptShare = async () => {
+  console.log('Accept share clicked - isAuthenticated:', isAuthenticated, 'user:', user);
+  
+  if (!isAuthenticated) {
+    // Redirect to login with return URL that includes the share token
+    navigate('/login', { 
+      state: { 
+        from: { 
+          pathname: `/shared/${token}`,
+          search: `?token=${token}` 
+        } 
+      } 
+    });
+    return;
+  }
+
+  setIsAccepting(true);
+  try {
+    const result = await acceptShare(token);
+    console.log('Share accepted successfully:', result);
+    setAccepted(true);
+    setTimeout(() => {
+      navigate('/'); // Redirect to dashboard after acceptance
+    }, 2000);
+  } catch (error) {
+    console.error('Failed to accept share:', error);
+  } finally {
+    setIsAccepting(false);
+  }
+};
 
   // Show loading while checking auth or loading share
   if (authLoading || !isInitialized || shareLoading) {
@@ -183,9 +197,9 @@ const SharedNotes = () => {
               )}
               <Button
                 variant="outline"
-                onClick={() => navigate('/')}
+                 onClick={() => navigate(isAuthenticated ? '/' : '/login')}
               >
-                {isExpired ? 'Go to Dashboard' : 'Cancel'}
+                {isExpired ? 'Go to Dashboard' : (isAuthenticated ? 'Cancel' : 'Login First')}
               </Button>
             </div>
 

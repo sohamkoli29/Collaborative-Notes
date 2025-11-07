@@ -78,92 +78,37 @@ router.get('/:noteId', noteAccess(), async (req, res) => {
 // @access  Private (note owner or collaborator with write access)
 router.post('/', async (req, res) => {
   try {
-    const { 
-      noteId, // Get noteId from request body
-      permission = 'read', 
-      expiresAt, 
-      maxAccesses, 
-      isPublic = false 
-    } = req.body;
+    const { title, content } = req.body;
     const userId = req.userId;
 
-    console.log('Create share request:', { noteId, userId, permission, isPublic });
-
-    if (!noteId) {
+    if (!title) {
       return res.status(400).json({
         success: false,
-        message: 'Note ID is required'
+        message: 'Note title is required'
       });
     }
 
-    // Verify user has access to the note
-    const note = await Note.findOne({
-      _id: noteId,
-      $or: [
-        { owner: userId },
-        { 
-          'collaborators.user': userId,
-          'collaborators.permission': 'write'
-        }
-      ]
+    const note = await Note.create({
+      title,
+      content: content || '',
+      owner: userId
     });
 
-    if (!note) {
-      return res.status(403).json({
-        success: false,
-        message: 'No write access to this note'
-      });
-    }
-
-    // Check if share already exists for this configuration
-    const existingShare = await Share.findOne({
-      note: noteId,
-      sharedBy: userId,
-      sharedWith: null,
-      isPublic,
-      permission
-    });
-
-    if (existingShare && !existingShare.isExpired()) {
-      return res.json({
-        success: true,
-        message: 'Share link already exists',
-        data: existingShare
-      });
-    }
-
-    // Create new share
-    const share = new Share({
-      note: noteId,
-      sharedBy: userId,
-      permission,
-      expiresAt: expiresAt ? new Date(expiresAt) : null,
-      maxAccesses: maxAccesses || null,
-      isPublic
-    });
-
-    // Generate share token
-    share.generateShareToken();
-    await share.save();
-
-    // Populate the share data
-    const populatedShare = await Share.findById(share._id)
-      .populate('sharedBy', 'username email')
-      .populate('note', 'title');
-
-    console.log('Share created successfully:', populatedShare._id);
+    const populatedNote = await Note.findById(note._id)
+      .populate('owner', 'username email')
+      .populate('lastEditedBy', 'username');
 
     res.status(201).json({
       success: true,
-      message: 'Share link created successfully',
-      data: populatedShare
+      message: 'Note created successfully',
+      data: populatedNote
     });
 
   } catch (error) {
-    console.error('Create share error:', error);
+    console.error('Create note error:', error);
     res.status(500).json({
       success: false,
-      message: 'Failed to create share link'
+      message: 'Failed to create note'
     });
   }
 });

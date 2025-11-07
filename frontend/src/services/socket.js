@@ -8,29 +8,22 @@ class SocketService {
   }
 
   connect(token) {
-    if (this.socket) {
-      this.disconnect();
-    }
-
-    // Fix: Use the base URL without /api for Socket.io
-    const API_URL = import.meta.env.VITE_API_URL?.replace('/api', '') || 'http://localhost:5000';
-    
-    console.log('Connecting to Socket.io server:', API_URL);
-    
-    this.socket = io(API_URL, {
-      auth: {
-        token
-      },
-      transports: ['websocket', 'polling'],
-      // Add reconnection options
-      reconnection: true,
-      reconnectionAttempts: 5,
-      reconnectionDelay: 1000,
-      timeout: 10000
-    });
-
-    this.setupEventListeners();
+  if (this.socket) {
+    this.disconnect();
   }
+
+  // Use environment variable or default
+  const API_URL = import.meta.env.VITE_API_URL?.replace('/api', '') || 'http://localhost:5000';
+  
+  console.log('Connecting to Socket.io server:', API_URL);
+  
+  this.socket = io(API_URL, {
+    auth: { token },
+    transports: ['websocket', 'polling']
+  });
+
+  this.setupEventListeners();
+}
 
   setupEventListeners() {
     this.socket.on('connect', () => {

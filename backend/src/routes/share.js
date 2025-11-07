@@ -129,6 +129,8 @@ router.get('/token/:token', async (req, res) => {
 });
 
 // Accept share (REQUIRES AUTH)
+// Accept share (REQUIRES AUTH)
+// Accept share (REQUIRES AUTH)
 router.post('/accept/:token', authMiddleware, async (req, res) => {
   try {
     const { token } = req.params;
@@ -141,7 +143,8 @@ router.post('/accept/:token', authMiddleware, async (req, res) => {
     }
 
     const share = await Share.findOne({ shareToken: token })
-      .populate('note', 'title content owner collaborators');
+      .populate('note', 'title content owner collaborators')
+      .populate('sharedBy', '_id');
 
     if (!share) {
       return res.status(404).json({ success: false, message: 'Share not found' });
@@ -152,7 +155,7 @@ router.post('/accept/:token', authMiddleware, async (req, res) => {
       return res.status(410).json({ success: false, message: 'This share link has expired' });
     }
 
-    const note = await Note.findById(share.note._id);
+    let note = await Note.findById(share.note._id);
     
     if (!note) {
       return res.status(404).json({ success: false, message: 'Note not found' });
@@ -160,7 +163,7 @@ router.post('/accept/:token', authMiddleware, async (req, res) => {
 
     console.log('Found note:', note._id, 'Current collaborators:', note.collaborators);
     console.log('Share permission:', share.permission);
-    console.log('Share sharedBy:', share.sharedBy);
+    console.log('Share sharedBy ID:', share.sharedBy._id);
 
     // Check if user already has access (is owner or collaborator)
     const isOwner = note.owner.toString() === userId;
@@ -173,20 +176,34 @@ router.post('/accept/:token', authMiddleware, async (req, res) => {
     if (!isOwner && !existingCollaborator) {
       console.log('Adding user as collaborator with permission:', share.permission);
       
-      // Add user as collaborator
-      note.collaborators.push({
-        user: userId,
-        permission: share.permission,
-        addedBy: share.sharedBy,
-        addedAt: new Date()
-      });
+      // Use findByIdAndUpdate with $push for better reliability
+      const updatedNote = await Note.findByIdAndUpdate(
+        note._id,
+        {
+          $push: {
+            collaborators: {
+              user: userId,
+              permission: share.permission,
+              addedBy: share.sharedBy._id,
+              addedAt: new Date()
+            }
+          }
+        },
+        { 
+          new: true, 
+          runValidators: true 
+        }
+      );
       
-      await note.save();
+      if (!updatedNote) {
+        throw new Error('Failed to update note');
+      }
+      
       console.log('User added as collaborator successfully');
-      
-      // Refresh the note to get updated data
-      const updatedNote = await Note.findById(note._id);
       console.log('Updated note collaborators:', updatedNote.collaborators);
+      
+      // Update the note variable for later use
+      note = updatedNote;
     } else {
       console.log('User already has access to this note');
     }
@@ -198,7 +215,8 @@ router.post('/accept/:token', authMiddleware, async (req, res) => {
     // Get the updated note with populated data
     const finalNote = await Note.findById(note._id)
       .populate('owner', 'username email')
-      .populate('collaborators.user', 'username email');
+      .populate('collaborators.user', 'username email')
+      .populate('collaborators.addedBy', 'username');
 
     res.json({
       success: true,
@@ -210,6 +228,16 @@ router.post('/accept/:token', authMiddleware, async (req, res) => {
     });
   } catch (error) {
     console.error('Accept share error:', error);
+    
+    // More detailed error response
+    if (error.name === 'ValidationError') {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Validation error',
+        errors: Object.values(error.errors).map(e => e.message)
+      });
+    }
+    
     res.status(500).json({ success: false, message: 'Failed to accept share' });
   }
 });
